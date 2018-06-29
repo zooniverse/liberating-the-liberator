@@ -27,11 +27,73 @@ class SelectedAnnotation extends React.Component {
     this.handleKeyUp = this.handleKeyUp.bind(this);
     this.checkPaneBounds = this.checkPaneBounds.bind(this);
 
+    //Speech Recognition
+    //--------------------------------
+    //First check: do we have Speech Recognition on this browser?
+    //Chrome uses the webkit prefix, and Chrome 64is the only browser that I've
+    //managed to successfully test with.
+    try {
+      if ('webkitSpeechRecognition' in window) {  //Chrome
+        this.speechRecognition = new webkitSpeechRecognition();
+      } else if ('SpeechRecognition' in window) {  //Should be the future "standard"
+        this.speechRecognition = new SpeechRecognition();
+      }
+    } catch (err) { console.error('SpeechRecognition error: ', err); }
+    
+    if (this.speechRecognition) {
+      //Note that SpeechRecognition has to be triggered by a user event, e.g.
+      //voiceButton.onClick = () => { this.speechRecognition.start() }
+      //This will then prompt the user to provide mic permissions.
+
+      //Triggers when SpeechRecognition.start() successfully, er, starts.
+      this.speechRecognition.onstart = (e) => {
+        console.log('SpeechRecognition Start: ', e);
+        this.setState({ speechStatus: 'on' });
+      };
+      
+      //Triggers when speech (e.g. a sentence) has been recognised.
+      //In Chrome 64, the speech recognition ends (i.e. mic stops recording)
+      //once a sentence has been recognised (i.e. there's a pause indicating
+      //the end of the sentence). Note that this means SpeechRecognition.onend()
+      //is also triggered.
+      //I'm still figuring out how to turn the mic to "always on".
+      this.speechRecognition.onresult = (e) => {
+        console.log('SpeechRecognition Result: ', e.results);
+        if (e && e.results && this.inputText) {
+          let text = this.inputText.value.replace(/\s+$/g, '') + ' ';
+          for (let i = 0; i < e.results.length; i++) {
+            if (!e.results[i].isFinal) continue;
+            for (let j = 0; j < e.results.length; j++) {
+              text += e.results[i][j].transcript + ' ';
+            }
+          }
+          this.inputText.value = text;
+          this.onTextUpdate();
+        }
+      };
+      
+      //Triggers when speech recognition ends, either when the user stops it
+      //(i.e. SpeechRecognition.stop()) or when the speech recognition detects
+      //the end of input (e.g. a pause indicating the end of a sentence.)
+      this.speechRecognition.onend = (e) => {
+        console.log('SpeechRecognition End: ', e);
+        this.setState({ speechStatus: 'off' });
+      };
+      
+      //Triggers when things are sad.
+      this.speechRecognition.onerror = (e) => {
+        console.error('SpeechRecognition.onerror(): ', e);
+        this.setState({ speechStatus: 'error' });
+      };
+    }
+    //--------------------------------
+
     this.state = {
       annotationText: '',
       previousTranscriptionAgreement: false,
       previousTranscriptionSelection: false,
       showAnnotationOptions: false,
+      speechStatus: 'off',  //Speech Recognition
     };
   }
 
@@ -244,6 +306,25 @@ class SelectedAnnotation extends React.Component {
           )}
 
           <div className="selected-annotation__buttons">
+            {
+              //Speech Recongition
+              //--------------------------------
+              (this.speechRecognition)
+                ? <button onClick={(e)=>{
+                    if (this.state.speechStatus === 'off') {
+                      this.speechRecognition.start();
+                    } else if (this.state.speechStatus === 'on') {
+                      this.speechRecognition.stop();
+                    }
+                    console.log(this.state.speechStatus);
+                  }}>
+                    {(this.state.speechStatus === 'off') ? 'Voice: off' : null}
+                    {(this.state.speechStatus === 'on') ? 'Voice: on' : null}
+                    {(this.state.speechStatus === 'error') ? 'Voice: ERROR' : null}
+                  </button>
+                : <button>No Voice compatibility (try Chrome)</button>
+              //--------------------------------
+            }
             <button className="done-button" onClick={this.saveText}>Done</button>
             <button onClick={this.cancelAnnotation}>Cancel</button>
             {(this.props.annotation.previousAnnotation) ? null :
